@@ -73,3 +73,64 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: "Loi server", error: err.message });
   }
 };
+
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select("-passwordHash");
+    if (!user) {
+      return res.status(404).json({ message: "Khong tim thay nguoi dung" });
+    }
+    res.status(200).json({ user });
+  } catch (err) {
+    res.status(500).json({ message: "Loi server", error: err.message });
+  }
+};
+
+exports.updateMe = async (req, res) => {
+  try {
+    const { fullName, avatarUrl } = req.body;
+
+    const updateData = {};
+    if (fullName !== undefined) updateData.fullName = fullName;
+    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+
+    const user = await User.findByIdAndUpdate(req.userId, updateData, {
+      new: true,
+    }).select("-passwordHash");
+
+    if (!user) {
+      return res.status(404).json({ message: "Khong tim thay nguoi dung" });
+    }
+
+    res.status(200).json({ message: "Cap nhat thanh cong", user });
+  } catch (err) {
+    res.status(500).json({ message: "Loi server", error: err.message });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Thieu mat khau cu hoac moi" });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ message: "Khong tim thay nguoi dung" });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Mat khau cu khong dung" });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.status(200).json({ message: "Doi mat khau thanh cong" });
+  } catch (err) {
+    res.status(500).json({ message: "Loi server", error: err.message });
+  }
+};
