@@ -7,12 +7,12 @@ exports.register = async (req, res) => {
     const { fullName, email, password } = req.body;
 
     if (!fullName || !email || !password) {
-      return res.status(400).json({ message: "Thieu thong tin bat buoc" });
+      return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
     }
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      return res.status(400).json({ message: "Email da duoc su dung" });
+      return res.status(400).json({ message: "Email đã được sử dụng" });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -24,7 +24,7 @@ exports.register = async (req, res) => {
     });
 
     res.status(201).json({
-      message: "Dang ky thanh cong",
+      message: "Đăng ký thành công",
       user: {
         id: user._id,
         fullName: user.fullName,
@@ -32,7 +32,7 @@ exports.register = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ message: "Loi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
 
@@ -41,17 +41,17 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: "Thieu email hoac mat khau" });
+      return res.status(400).json({ message: "Thiếu email hoặc mật khẩu" });
     }
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(401).json({ message: "Email hoac mat khau khong dung" });
+      return res.status(401).json({ message: "Email hoặc mật khẩu không đúng" });
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      return res.status(401).json({ message: "Email hoac mat khau khong dung" });
+      return res.status(401).json({ message: "Email hoặc mật khẩu không đúng" });
     }
 
     const token = jwt.sign(
@@ -61,7 +61,7 @@ exports.login = async (req, res) => {
     );
 
     res.status(200).json({
-      message: "Dang nhap thanh cong",
+      message: "Đăng nhập thành công",
       token,
       user: {
         id: user._id,
@@ -70,7 +70,7 @@ exports.login = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ message: "Loi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
 
@@ -78,11 +78,11 @@ exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.userId).select("-passwordHash");
     if (!user) {
-      return res.status(404).json({ message: "Khong tim thay nguoi dung" });
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
     }
     res.status(200).json({ user });
   } catch (err) {
-    res.status(500).json({ message: "Loi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
 
@@ -99,12 +99,12 @@ exports.updateMe = async (req, res) => {
     }).select("-passwordHash");
 
     if (!user) {
-      return res.status(404).json({ message: "Khong tim thay nguoi dung" });
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
     }
 
-    res.status(200).json({ message: "Cap nhat thanh cong", user });
+    res.status(200).json({ message: "Cập nhật thành công", user });
   } catch (err) {
-    res.status(500).json({ message: "Loi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
 
@@ -113,24 +113,24 @@ exports.changePassword = async (req, res) => {
     const { oldPassword, newPassword } = req.body;
 
     if (!oldPassword || !newPassword) {
-      return res.status(400).json({ message: "Thieu mat khau cu hoac moi" });
+      return res.status(400).json({ message: "Thiếu mật khẩu cũ hoặc mới" });
     }
 
     const user = await User.findById(req.userId);
     if (!user) {
-      return res.status(404).json({ message: "Khong tim thay nguoi dung" });
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
     }
 
     const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!isMatch) {
-      return res.status(401).json({ message: "Mat khau cu khong dung" });
+      return res.status(401).json({ message: "Mật khẩu cũ không đúng" });
     }
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    res.status(200).json({ message: "Doi mat khau thanh cong" });
+    res.status(200).json({ message: "Đổi mật khẩu thành công" });
   } catch (err) {
-    res.status(500).json({ message: "Loi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
