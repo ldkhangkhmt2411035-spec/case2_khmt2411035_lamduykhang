@@ -87,6 +87,7 @@ class ApiService {
     String? status,
     String? priority,
     String? search,
+    String? assigneeId,
     String? sortBy,
     String order = "desc",
   }) async {
@@ -96,6 +97,7 @@ class ApiService {
       if (status != null && status.isNotEmpty) "status": status,
       if (priority != null && priority.isNotEmpty) "priority": priority,
       if (search != null && search.isNotEmpty) "search": search,
+      if (assigneeId != null && assigneeId.isNotEmpty) "assigneeId": assigneeId,
       if (sortBy != null && sortBy.isNotEmpty) "sortBy": sortBy,
       "order": order,
     };
@@ -155,6 +157,17 @@ class ApiService {
         if (startDate != null) "startDate": startDate.toIso8601String(),
         if (dueDate != null) "dueDate": dueDate.toIso8601String(),
       }),
+    );
+    return jsonDecode(response.body);
+  }
+
+  // Chi cap nhat trang thai (PATCH /tasks/:id/status)
+  static Future<Map<String, dynamic>> updateStatus(String id, String status) async {
+    final headers = await _authHeaders();
+    final response = await http.patch(
+      Uri.parse("$baseUrl/tasks/$id/status"),
+      headers: headers,
+      body: jsonEncode({"status": status}),
     );
     return jsonDecode(response.body);
   }

@@ -24,6 +24,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _scope = "all"; // all | mine | assigned | shared
   String? _status; // null = tat ca
   String? _priority; // null = tat ca
+  String? _assigneeId; // null = tat ca nguoi phu trach
+  // Danh sach nguoi phu trach da gap trong cac cong viec da tai (id -> ten), dung cho bo loc
+  final Map<String, String> _knownAssignees = {};
   String _sortBy = "createdAt";
   String _order = "desc";
   final _searchController = TextEditingController();
@@ -57,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
       scope: _scope,
       status: _status,
       priority: _priority,
+      assigneeId: _assigneeId,
       search: _searchController.text.trim(),
       sortBy: _sortBy,
       order: _order,
@@ -68,6 +72,11 @@ class _HomeScreenState extends State<HomeScreen> {
       final list = (result["tasks"] as List)
           .map((e) => Task.fromJson(e as Map<String, dynamic>))
           .toList();
+      for (final t in list) {
+        for (final a in t.assignees) {
+          _knownAssignees[a.user.id] = a.user.fullName.isNotEmpty ? a.user.fullName : a.user.email;
+        }
+      }
       setState(() {
         _tasks = list;
         _loadingTasks = false;
@@ -229,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _filterMenuButton() {
-    final hasFilter = _status != null || _priority != null;
+    final hasFilter = _status != null || _priority != null || _assigneeId != null;
     return PopupMenuButton<String>(
       tooltip: "Lọc",
       onSelected: (value) {
@@ -237,6 +246,10 @@ class _HomeScreenState extends State<HomeScreen> {
           if (value == "clear") {
             _status = null;
             _priority = null;
+            _assigneeId = null;
+          } else if (value.startsWith("assignee:")) {
+            final v = value.substring(9);
+            _assigneeId = v == "none" ? null : v;
           } else if (value.startsWith("status:")) {
             final v = value.substring(7);
             _status = v == "none" ? null : v;
@@ -252,13 +265,19 @@ class _HomeScreenState extends State<HomeScreen> {
         const PopupMenuItem(value: "status:none", child: Text("Tất cả trạng thái")),
         const PopupMenuItem(value: "status:todo", child: Text("Chưa thực hiện")),
         const PopupMenuItem(value: "status:in_progress", child: Text("Đang thực hiện")),
-        const PopupMenuItem(value: "status:done", child: Text("Đã hoàn thành")),
+        const PopupMenuItem(value: "status:completed", child: Text("Đã hoàn thành")),
         const PopupMenuDivider(),
         const PopupMenuItem(enabled: false, child: Text("Mức ưu tiên", style: TextStyle(fontWeight: FontWeight.bold))),
         const PopupMenuItem(value: "priority:none", child: Text("Tất cả mức ưu tiên")),
         const PopupMenuItem(value: "priority:low", child: Text("Thấp")),
         const PopupMenuItem(value: "priority:medium", child: Text("Trung bình")),
         const PopupMenuItem(value: "priority:high", child: Text("Cao")),
+        const PopupMenuDivider(),
+        const PopupMenuItem(enabled: false, child: Text("Người phụ trách", style: TextStyle(fontWeight: FontWeight.bold))),
+        const PopupMenuItem(value: "assignee:none", child: Text("Tất cả người phụ trách")),
+        ..._knownAssignees.entries.map(
+          (e) => PopupMenuItem(value: "assignee:${e.key}", child: Text(e.value)),
+        ),
         const PopupMenuDivider(),
         const PopupMenuItem(value: "clear", child: Text("Xóa bộ lọc")),
       ],
@@ -365,7 +384,7 @@ class TaskCard extends StatelessWidget {
         return Colors.grey;
       case TaskStatus.inProgress:
         return Colors.orange;
-      case TaskStatus.done:
+      case TaskStatus.completed:
         return Colors.green;
     }
   }
@@ -386,7 +405,7 @@ class TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final overdue = task.dueDate != null &&
-        task.status != TaskStatus.done &&
+        task.status != TaskStatus.completed &&
         task.dueDate!.isBefore(DateTime.now());
 
     return Material(

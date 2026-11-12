@@ -152,7 +152,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 segments: const [
                   ButtonSegment(value: TaskStatus.todo, label: Text("Chưa thực hiện")),
                   ButtonSegment(value: TaskStatus.inProgress, label: Text("Đang thực hiện")),
-                  ButtonSegment(value: TaskStatus.done, label: Text("Hoàn thành")),
+                  ButtonSegment(value: TaskStatus.completed, label: Text("Hoàn thành")),
                 ],
                 selected: {_status},
                 onSelectionChanged: (s) => setState(() => _status = s.first),

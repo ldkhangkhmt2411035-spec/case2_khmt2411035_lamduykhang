@@ -1,6 +1,6 @@
 import 'user_ref.dart';
 
-enum TaskStatus { todo, inProgress, done }
+enum TaskStatus { todo, inProgress, completed }
 
 enum TaskPriority { low, medium, high }
 
@@ -8,8 +8,9 @@ TaskStatus statusFromString(String? s) {
   switch (s) {
     case "in_progress":
       return TaskStatus.inProgress;
-    case "done":
-      return TaskStatus.done;
+    case "completed":
+    case "done": // du lieu cu truoc khi doi ten trang thai
+      return TaskStatus.completed;
     default:
       return TaskStatus.todo;
   }
@@ -19,8 +20,8 @@ String statusToString(TaskStatus s) {
   switch (s) {
     case TaskStatus.inProgress:
       return "in_progress";
-    case TaskStatus.done:
-      return "done";
+    case TaskStatus.completed:
+      return "completed";
     case TaskStatus.todo:
       return "todo";
   }
@@ -32,7 +33,7 @@ String statusLabel(TaskStatus s) {
       return "Chưa thực hiện";
     case TaskStatus.inProgress:
       return "Đang thực hiện";
-    case TaskStatus.done:
+    case TaskStatus.completed:
       return "Đã hoàn thành";
   }
 }
