@@ -6,6 +6,7 @@ const {
   getTasks,
   getTaskById,
   updateTask,
+  updateStatus,
   deleteTask,
   assignTask,
   removeAssignee,
@@ -22,6 +23,7 @@ router.get("/", getTasks);
 router.get("/:id", getTaskById);
 router.put("/:id", updateTask);
 router.delete("/:id", deleteTask);
+router.patch("/:id/status", updateStatus);
 
 router.post("/:id/assign", assignTask);
 router.delete("/:id/assign/:userId", removeAssignee);

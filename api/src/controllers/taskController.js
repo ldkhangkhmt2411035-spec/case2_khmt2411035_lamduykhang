@@ -2,7 +2,54 @@ const Task = require("../models/Task");
 const User = require("../models/User");
 const { getRoleOf, canView, canEdit, isOwner } = require("../utils/taskAccess");
 
+const mongoose = require("mongoose");
+
 const USER_FIELDS = "fullName email avatarUrl";
+
+const STATUSES = ["todo", "in_progress", "completed"];
+const PRIORITIES = ["low", "medium", "high"];
+const PRIORITY_RANK = { low: 1, medium: 2, high: 3 };
+
+// Kiem tra trang thai / uu tien / ngay thang. Tra ve thong bao loi hoac null.
+function validateTaskFields({ status, priority, startDate, dueDate }) {
+  if (status !== undefined && !STATUSES.includes(status)) {
+    return "Trạng thái không hợp lệ (todo, in_progress, completed)";
+  }
+  if (priority !== undefined && !PRIORITIES.includes(priority)) {
+    return "Mức ưu tiên không hợp lệ (low, medium, high)";
+  }
+  for (const [name, value] of [["Ngày bắt đầu", startDate], ["Hạn hoàn thành", dueDate]]) {
+    if (value && isNaN(new Date(value).getTime())) {
+      return `${name} không hợp lệ`;
+    }
+  }
+  if (startDate && dueDate && new Date(dueDate) < new Date(startDate)) {
+    return "Hạn hoàn thành phải sau hoặc bằng ngày bắt đầu";
+  }
+  return null;
+}
+
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Sap xep o phia server. priority sap theo thu tu thap < trung binh < cao;
+// dueDate: cong viec chua dat han luon nam cuoi.
+function sortTasks(tasks, sortBy, order) {
+  const dir = order === "asc" ? 1 : -1;
+  if (sortBy === "priority") {
+    return tasks.sort((a, b) => (PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]) * dir);
+  }
+  if (sortBy === "dueDate") {
+    return tasks.sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return (a.dueDate - b.dueDate) * dir;
+    });
+  }
+  return tasks;
+}
 
 function populateTask(query) {
   return query
@@ -27,6 +74,9 @@ exports.createTask = async (req, res) => {
       return res.status(400).json({ message: "Thiếu tiêu đề công việc" });
     }
 
+    const fieldError = validateTaskFields({ status, priority, startDate, dueDate });
+    if (fieldError) return res.status(400).json({ message: fieldError });
+
     const task = await Task.create({
       title: title.trim(),
       description: description || "",
@@ -42,14 +92,14 @@ exports.createTask = async (req, res) => {
     const populated = await populateTask(Task.findById(task._id));
     res.status(201).json({ message: "Tạo công việc thành công", task: formatTask(populated, req.userId) });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
 // GET /api/tasks?scope=all|mine|assigned|shared&status=&priority=&search=&sortBy=&order=
 exports.getTasks = async (req, res) => {
   try {
-    const { scope = "all", status, priority, search, sortBy, order } = req.query;
+    const { scope = "all", status, priority, search, sortBy, order, assigneeId } = req.query;
     const userId = req.userId;
 
     const relatedConditions = [
@@ -71,26 +121,40 @@ exports.getTasks = async (req, res) => {
 
     const filter = { $and: [scopeCondition] };
 
-    if (status) filter.$and.push({ status });
-    if (priority) filter.$and.push({ priority });
+    if (status) {
+      if (!STATUSES.includes(status)) return res.status(400).json({ message: "Trạng thái không hợp lệ" });
+      filter.$and.push({ status });
+    }
+    if (priority) {
+      if (!PRIORITIES.includes(priority)) return res.status(400).json({ message: "Mức ưu tiên không hợp lệ" });
+      filter.$and.push({ priority });
+    }
+    // Loc theo nguoi phu trach
+    if (assigneeId) {
+      if (!mongoose.isValidObjectId(assigneeId)) {
+        return res.status(400).json({ message: "assigneeId không hợp lệ" });
+      }
+      filter.$and.push({ "assignees.user": assigneeId });
+    }
     if (search && search.trim()) {
-      filter.$and.push({ title: { $regex: search.trim(), $options: "i" } });
+      filter.$and.push({ title: { $regex: escapeRegex(search.trim()), $options: "i" } });
     }
 
-    const sortField = ["dueDate", "priority", "createdAt", "startDate", "title"].includes(sortBy)
-      ? sortBy
-      : "createdAt";
     const sortOrder = order === "asc" ? 1 : -1;
+    // priority va dueDate duoc sap bang sortTasks(); cac truong con lai sap bang MongoDB
+    const dbSortField = ["startDate", "title", "createdAt"].includes(sortBy) ? sortBy : "createdAt";
+    const dbSortOrder = ["startDate", "title", "createdAt"].includes(sortBy) ? sortOrder : -1;
 
-    const tasks = await populateTask(
-      Task.find(filter).sort({ [sortField]: sortOrder })
+    const found = await populateTask(
+      Task.find(filter).sort({ [dbSortField]: dbSortOrder })
     );
+    const tasks = sortTasks(found, sortBy, order);
 
     res.status(200).json({
       tasks: tasks.map((t) => formatTask(t, userId)),
     });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -106,7 +170,7 @@ exports.getTaskById = async (req, res) => {
 
     res.status(200).json({ task: formatTask(task, req.userId) });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -121,6 +185,15 @@ exports.updateTask = async (req, res) => {
     }
 
     const { title, description, status, priority, startDate, dueDate } = req.body;
+
+    if (title !== undefined && !String(title).trim()) {
+      return res.status(400).json({ message: "Tiêu đề không được để trống" });
+    }
+    const finalStart = startDate !== undefined ? startDate : task.startDate;
+    const finalDue = dueDate !== undefined ? dueDate : task.dueDate;
+    const fieldError = validateTaskFields({ status, priority, startDate: finalStart, dueDate: finalDue });
+    if (fieldError) return res.status(400).json({ message: fieldError });
+
     if (title !== undefined) task.title = title.trim();
     if (description !== undefined) task.description = description;
     if (status !== undefined) task.status = status;
@@ -132,7 +205,7 @@ exports.updateTask = async (req, res) => {
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Cập nhật thành công", task: formatTask(populated, req.userId) });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -149,7 +222,31 @@ exports.deleteTask = async (req, res) => {
     await task.deleteOne();
     res.status(200).json({ message: "Xóa công việc thành công" });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+// PATCH /api/tasks/:id/status   body: { status }   (owner hoac editor)
+exports.updateStatus = async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ message: "Không tìm thấy công việc" });
+
+    if (!canEdit(task, req.userId)) {
+      return res.status(403).json({ message: "Bạn không có quyền đổi trạng thái công việc này" });
+    }
+
+    const { status } = req.body;
+    if (!STATUSES.includes(status)) {
+      return res.status(400).json({ message: "Trạng thái không hợp lệ (todo, in_progress, completed)" });
+    }
+
+    task.status = status;
+    await task.save();
+    const populated = await populateTask(Task.findById(task._id));
+    res.status(200).json({ message: "Cập nhật trạng thái thành công", task: formatTask(populated, req.userId) });
+  } catch (err) {
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -201,7 +298,7 @@ exports.assignTask = async (req, res) => {
       notFoundEmails: notFound,
     });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -223,7 +320,7 @@ exports.removeAssignee = async (req, res) => {
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Đã gỡ người phụ trách", task: formatTask(populated, req.userId) });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -261,7 +358,7 @@ exports.shareTask = async (req, res) => {
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Chia sẻ thành công", task: formatTask(populated, req.userId) });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -285,7 +382,7 @@ exports.updateShareRole = async (req, res) => {
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Cập nhật quyền thành công", task: formatTask(populated, req.userId) });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -307,6 +404,6 @@ exports.revokeShare = async (req, res) => {
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Đã thu hồi quyền chia sẻ", task: formatTask(populated, req.userId) });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
