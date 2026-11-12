@@ -1,16 +1,21 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const {
+  validateRegister,
+  validateLogin,
+  validateUpdateProfile,
+  validateChangePassword,
+} = require("../validators/authValidator");
 
 exports.register = async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
 
-    if (!fullName || !email || !password) {
-      return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
-    }
+    const invalid = validateRegister({ fullName, email, password });
+    if (invalid) return res.status(400).json({ message: invalid });
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await User.findOne({ email: email.trim().toLowerCase() });
     if (existingUser) {
       return res.status(400).json({ message: "Email đã được sử dụng" });
     }
@@ -18,8 +23,8 @@ exports.register = async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const user = await User.create({
-      fullName,
-      email: email.toLowerCase(),
+      fullName: fullName.trim(),
+      email: email.trim().toLowerCase(),
       passwordHash,
     });
 
@@ -32,7 +37,7 @@ exports.register = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -40,11 +45,10 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ message: "Thiếu email hoặc mật khẩu" });
-    }
+    const invalid = validateLogin({ email, password });
+    if (invalid) return res.status(400).json({ message: invalid });
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
     if (!user) {
       return res.status(401).json({ message: "Email hoặc mật khẩu không đúng" });
     }
@@ -70,7 +74,7 @@ exports.login = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -82,7 +86,7 @@ exports.getMe = async (req, res) => {
     }
     res.status(200).json({ user });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -90,8 +94,11 @@ exports.updateMe = async (req, res) => {
   try {
     const { fullName, avatarUrl } = req.body;
 
+    const invalid = validateUpdateProfile({ fullName, avatarUrl });
+    if (invalid) return res.status(400).json({ message: invalid });
+
     const updateData = {};
-    if (fullName !== undefined) updateData.fullName = fullName;
+    if (fullName !== undefined) updateData.fullName = fullName.trim();
     if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
 
     const user = await User.findByIdAndUpdate(req.userId, updateData, {
@@ -104,7 +111,7 @@ exports.updateMe = async (req, res) => {
 
     res.status(200).json({ message: "Cập nhật thành công", user });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
 
@@ -112,9 +119,8 @@ exports.changePassword = async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
 
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ message: "Thiếu mật khẩu cũ hoặc mới" });
-    }
+    const invalid = validateChangePassword({ oldPassword, newPassword });
+    if (invalid) return res.status(400).json({ message: invalid });
 
     const user = await User.findById(req.userId);
     if (!user) {
@@ -131,6 +137,6 @@ exports.changePassword = async (req, res) => {
 
     res.status(200).json({ message: "Đổi mật khẩu thành công" });
   } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    res.status(500).json({ message: "Lỗi server" });
   }
 };
