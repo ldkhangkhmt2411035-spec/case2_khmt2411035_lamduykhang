@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 const { getTaskEmailLogs } = require("../controllers/notificationController");
+const { getTaskActivities } = require("../controllers/activityController");
 const {
   createTask,
   getTasks,
@@ -26,6 +27,7 @@ router.put("/:id", updateTask);
 router.delete("/:id", deleteTask);
 router.patch("/:id/status", updateStatus);
 router.get("/:id/email-logs", getTaskEmailLogs);
+router.get("/:id/activities", getTaskActivities);
 
 router.post("/:id/assign", assignTask);
 router.delete("/:id/assign/:userId", removeAssignee);

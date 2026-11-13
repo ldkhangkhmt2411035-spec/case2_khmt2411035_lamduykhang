@@ -5,6 +5,8 @@ const { getRoleOf, canView, canEdit, isOwner } = require("../utils/taskAccess");
 const mongoose = require("mongoose");
 const Notification = require("../models/Notification");
 const notify = require("../services/notificationService");
+const TaskActivity = require("../models/TaskActivity");
+const { logActivity, fmtDate, STATUS_LABEL, ROLE_LABEL } = require("../services/activityService");
 
 const USER_FIELDS = "fullName email avatarUrl";
 
@@ -90,6 +92,8 @@ exports.createTask = async (req, res) => {
       assignees: [],
       sharedWith: [],
     });
+
+    await logActivity({ taskId: task._id, userId: req.userId, action: "created", details: `Tạo công việc "${task.title}"` });
 
     const populated = await populateTask(Task.findById(task._id));
     res.status(201).json({ message: "Tạo công việc thành công", task: formatTask(populated, req.userId) });
@@ -198,6 +202,13 @@ exports.updateTask = async (req, res) => {
 
     const prevStatus = task.status;
     const prevDue = task.dueDate ? task.dueDate.getTime() : null;
+    const before = {
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      startDate: task.startDate ? task.startDate.getTime() : null,
+      dueDate: task.dueDate,
+    };
 
     if (title !== undefined) task.title = title.trim();
     if (description !== undefined) task.description = description;
@@ -211,6 +222,32 @@ exports.updateTask = async (req, res) => {
     if (dueChanged) task.reminderSent = false; // doi han -> cho phep nhac lai theo han moi
 
     await task.save();
+
+    // Ghi lich su hoat dong
+    const changedFields = [];
+    if (task.title !== before.title) changedFields.push("tiêu đề");
+    if (task.description !== before.description) changedFields.push("mô tả");
+    if (task.priority !== before.priority) changedFields.push("mức ưu tiên");
+    if ((task.startDate ? task.startDate.getTime() : null) !== before.startDate) changedFields.push("ngày bắt đầu");
+    if (changedFields.length > 0) {
+      await logActivity({ taskId: task._id, userId: req.userId, action: "updated", details: `Cập nhật ${changedFields.join(", ")}` });
+    }
+    if (task.status !== prevStatus) {
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: "status_changed",
+        details: `Đổi trạng thái: ${STATUS_LABEL[prevStatus]} → ${STATUS_LABEL[task.status]}`,
+      });
+    }
+    if (dueChanged) {
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: "due_date_changed",
+        details: `Đổi hạn hoàn thành: ${fmtDate(before.dueDate)} → ${fmtDate(task.dueDate)}`,
+      });
+    }
 
     // Thong bao cac su kien quan trong (khong lam hong request neu that bai)
     if (dueChanged || (task.status === "completed" && prevStatus !== "completed")) {
@@ -240,6 +277,7 @@ exports.deleteTask = async (req, res) => {
 
     await task.deleteOne();
     await Notification.deleteMany({ taskId: task._id }); // thong bao cua task da xoa khong con y nghia
+    await TaskActivity.deleteMany({ taskId: task._id });
     res.status(200).json({ message: "Xóa công việc thành công" });
   } catch (err) {
     res.status(500).json({ message: "Lỗi server" });
@@ -264,6 +302,15 @@ exports.updateStatus = async (req, res) => {
     const prevStatus = task.status;
     task.status = status;
     await task.save();
+
+    if (status !== prevStatus) {
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: "status_changed",
+        details: `Đổi trạng thái: ${STATUS_LABEL[prevStatus]} → ${STATUS_LABEL[status]}`,
+      });
+    }
 
     if (status === "completed" && prevStatus !== "completed") {
       const actor = await notify.getActor(req.userId);
@@ -322,6 +369,12 @@ exports.assignTask = async (req, res) => {
     await task.save();
 
     if (newUsers.length > 0) {
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: "assigned",
+        details: `Giao việc cho ${newUsers.map((u) => u.fullName || u.email).join(", ")}`,
+      });
       const actor = await notify.getActor(req.userId);
       await notify.notifyAssigned(task, actor, newUsers);
     }
@@ -347,10 +400,21 @@ exports.removeAssignee = async (req, res) => {
       return res.status(403).json({ message: "Bạn không có quyền thực hiện thao tác này" });
     }
 
+    const hadAssignee = task.assignees.some((a) => String(a.user) === String(req.params.userId));
     task.assignees = task.assignees.filter(
       (a) => String(a.user) !== String(req.params.userId)
     );
     await task.save();
+
+    if (hadAssignee) {
+      const removed = await notify.findUserSafe(req.params.userId);
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: "unassigned",
+        details: `Gỡ ${removed ? removed.fullName || removed.email : "một người"} khỏi danh sách phụ trách`,
+      });
+    }
 
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Đã gỡ người phụ trách", task: formatTask(populated, req.userId) });
@@ -393,6 +457,12 @@ exports.shareTask = async (req, res) => {
     await task.save();
 
     if (!existing || roleChanged) {
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: existing ? "share_updated" : "shared",
+        details: `${existing ? "Đổi quyền" : "Chia sẻ"} cho ${targetUser.fullName || targetUser.email} (quyền ${ROLE_LABEL[finalRole]})`,
+      });
       const actor = await notify.getActor(req.userId);
       if (!existing) await notify.notifyShared(task, actor, targetUser, finalRole);
       else await notify.notifyShareUpdated(task, actor, targetUser, finalRole);
@@ -428,6 +498,12 @@ exports.updateShareRole = async (req, res) => {
         notify.getActor(req.userId),
         notify.findUserSafe(req.params.userId),
       ]);
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: "share_updated",
+        details: `Đổi quyền của ${target ? target.fullName || target.email : "một người"} thành ${ROLE_LABEL[newRole]}`,
+      });
       if (target) await notify.notifyShareUpdated(task, actor, target, newRole);
     }
 
@@ -459,6 +535,12 @@ exports.revokeShare = async (req, res) => {
         notify.getActor(req.userId),
         notify.findUserSafe(req.params.userId),
       ]);
+      await logActivity({
+        taskId: task._id,
+        userId: req.userId,
+        action: "share_revoked",
+        details: `Thu hồi quyền chia sẻ của ${target ? target.fullName || target.email : "một người"}`,
+      });
       if (target) await notify.notifyShareRevoked(task, actor, target);
     }
 
