@@ -41,6 +41,9 @@ const taskSchema = new mongoose.Schema(
 
     assignees: { type: [assigneeSchema], default: [] },
     sharedWith: { type: [sharedWithSchema], default: [] },
+
+    // Da gui nhac "sap den han" chua (tranh nhac lap lai)
+    reminderSent: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
