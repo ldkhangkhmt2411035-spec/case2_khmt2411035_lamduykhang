@@ -3,6 +3,8 @@ const User = require("../models/User");
 const { getRoleOf, canView, canEdit, isOwner } = require("../utils/taskAccess");
 
 const mongoose = require("mongoose");
+const Notification = require("../models/Notification");
+const notify = require("../services/notificationService");
 
 const USER_FIELDS = "fullName email avatarUrl";
 
@@ -194,6 +196,9 @@ exports.updateTask = async (req, res) => {
     const fieldError = validateTaskFields({ status, priority, startDate: finalStart, dueDate: finalDue });
     if (fieldError) return res.status(400).json({ message: fieldError });
 
+    const prevStatus = task.status;
+    const prevDue = task.dueDate ? task.dueDate.getTime() : null;
+
     if (title !== undefined) task.title = title.trim();
     if (description !== undefined) task.description = description;
     if (status !== undefined) task.status = status;
@@ -201,7 +206,21 @@ exports.updateTask = async (req, res) => {
     if (startDate !== undefined) task.startDate = startDate ? new Date(startDate) : null;
     if (dueDate !== undefined) task.dueDate = dueDate ? new Date(dueDate) : null;
 
+    const newDue = task.dueDate ? task.dueDate.getTime() : null;
+    const dueChanged = prevDue !== newDue;
+    if (dueChanged) task.reminderSent = false; // doi han -> cho phep nhac lai theo han moi
+
     await task.save();
+
+    // Thong bao cac su kien quan trong (khong lam hong request neu that bai)
+    if (dueChanged || (task.status === "completed" && prevStatus !== "completed")) {
+      const actor = await notify.getActor(req.userId);
+      if (dueChanged) await notify.notifyDueDateChanged(task, actor);
+      if (task.status === "completed" && prevStatus !== "completed") {
+        await notify.notifyCompleted(task, actor);
+      }
+    }
+
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Cập nhật thành công", task: formatTask(populated, req.userId) });
   } catch (err) {
@@ -220,6 +239,7 @@ exports.deleteTask = async (req, res) => {
     }
 
     await task.deleteOne();
+    await Notification.deleteMany({ taskId: task._id }); // thong bao cua task da xoa khong con y nghia
     res.status(200).json({ message: "Xóa công việc thành công" });
   } catch (err) {
     res.status(500).json({ message: "Lỗi server" });
@@ -241,8 +261,15 @@ exports.updateStatus = async (req, res) => {
       return res.status(400).json({ message: "Trạng thái không hợp lệ (todo, in_progress, completed)" });
     }
 
+    const prevStatus = task.status;
     task.status = status;
     await task.save();
+
+    if (status === "completed" && prevStatus !== "completed") {
+      const actor = await notify.getActor(req.userId);
+      await notify.notifyCompleted(task, actor);
+    }
+
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Cập nhật trạng thái thành công", task: formatTask(populated, req.userId) });
   } catch (err) {
@@ -274,10 +301,12 @@ exports.assignTask = async (req, res) => {
       (e) => !users.some((u) => u.email === e.toLowerCase())
     );
 
+    const newUsers = []; // chi nhung nguoi moi duoc them moi nhan thong bao / email
     for (const user of users) {
       const exists = task.assignees.find((a) => String(a.user) === String(user._id));
       if (!exists) {
         task.assignees.push({ user: user._id, isPrimary: false });
+        newUsers.push(user);
       }
     }
 
@@ -291,6 +320,12 @@ exports.assignTask = async (req, res) => {
     }
 
     await task.save();
+
+    if (newUsers.length > 0) {
+      const actor = await notify.getActor(req.userId);
+      await notify.notifyAssigned(task, actor, newUsers);
+    }
+
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({
       message: "Giao việc thành công",
@@ -348,6 +383,7 @@ exports.shareTask = async (req, res) => {
 
     const finalRole = role === "editor" ? "editor" : "viewer";
     const existing = task.sharedWith.find((s) => String(s.user) === String(targetUser._id));
+    const roleChanged = existing && existing.role !== finalRole;
     if (existing) {
       existing.role = finalRole;
     } else {
@@ -355,6 +391,12 @@ exports.shareTask = async (req, res) => {
     }
 
     await task.save();
+
+    if (!existing || roleChanged) {
+      const actor = await notify.getActor(req.userId);
+      if (!existing) await notify.notifyShared(task, actor, targetUser, finalRole);
+      else await notify.notifyShareUpdated(task, actor, targetUser, finalRole);
+    }
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Chia sẻ thành công", task: formatTask(populated, req.userId) });
   } catch (err) {
@@ -376,8 +418,18 @@ exports.updateShareRole = async (req, res) => {
     const entry = task.sharedWith.find((s) => String(s.user) === String(req.params.userId));
     if (!entry) return res.status(404).json({ message: "Người này chưa được chia sẻ công việc" });
 
-    entry.role = role === "editor" ? "editor" : "viewer";
+    const newRole = role === "editor" ? "editor" : "viewer";
+    const roleChanged = entry.role !== newRole;
+    entry.role = newRole;
     await task.save();
+
+    if (roleChanged) {
+      const [actor, target] = await Promise.all([
+        notify.getActor(req.userId),
+        notify.findUserSafe(req.params.userId),
+      ]);
+      if (target) await notify.notifyShareUpdated(task, actor, target, newRole);
+    }
 
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Cập nhật quyền thành công", task: formatTask(populated, req.userId) });
@@ -396,10 +448,19 @@ exports.revokeShare = async (req, res) => {
       return res.status(403).json({ message: "Chỉ người tạo công việc mới được thu hồi quyền" });
     }
 
+    const hadShare = task.sharedWith.some((s) => String(s.user) === String(req.params.userId));
     task.sharedWith = task.sharedWith.filter(
       (s) => String(s.user) !== String(req.params.userId)
     );
     await task.save();
+
+    if (hadShare) {
+      const [actor, target] = await Promise.all([
+        notify.getActor(req.userId),
+        notify.findUserSafe(req.params.userId),
+      ]);
+      if (target) await notify.notifyShareRevoked(task, actor, target);
+    }
 
     const populated = await populateTask(Task.findById(task._id));
     res.status(200).json({ message: "Đã thu hồi quyền chia sẻ", task: formatTask(populated, req.userId) });
