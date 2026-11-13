@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
+import 'profile_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_form_screen.dart';
 
@@ -167,6 +168,18 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: const Text("Cá nhân"),
+              onTap: () async {
+                Navigator.pop(context); // dong drawer
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                );
+                if (mounted) _loadUser(); // cap nhat lai ten hien o drawer
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text("Đăng xuất"),

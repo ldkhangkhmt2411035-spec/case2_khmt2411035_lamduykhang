@@ -55,6 +55,38 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
+  // Cap nhat ho ten / anh dai dien
+  static Future<Map<String, dynamic>> updateMe({String? fullName, String? avatarUrl}) async {
+    final headers = await _authHeaders();
+    final response = await http.put(
+      Uri.parse("$baseUrl/auth/me"),
+      headers: headers,
+      body: jsonEncode({
+        if (fullName != null) "fullName": fullName,
+        if (avatarUrl != null) "avatarUrl": avatarUrl,
+      }),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    data["success"] = response.statusCode == 200;
+    return data;
+  }
+
+  // Doi mat khau
+  static Future<Map<String, dynamic>> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final headers = await _authHeaders();
+    final response = await http.put(
+      Uri.parse("$baseUrl/auth/change-password"),
+      headers: headers,
+      body: jsonEncode({"oldPassword": oldPassword, "newPassword": newPassword}),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    data["success"] = response.statusCode == 200;
+    return data;
+  }
+
   // Dang xuat: chi can xoa token da luu tren may
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
