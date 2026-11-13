@@ -19,6 +19,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _loading = true;
   String? _error;
   bool _changed = false; // bao cho man hinh truoc biet co can refresh khong
+  int _reloadToken = 0; // doi moi khi tai lai de cac muc lich su tu lam moi
 
   @override
   void initState() {
@@ -37,6 +38,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       setState(() {
         _task = Task.fromJson(result["task"] as Map<String, dynamic>);
         _loading = false;
+        _reloadToken++;
       });
     } else {
       setState(() {
@@ -247,9 +249,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               ),
             ),
           ),
+        const SizedBox(height: 16),
+        _ActivitySection(key: ValueKey("activity-$_reloadToken"), taskId: task.id),
         if (task.isOwner) ...[
-          const SizedBox(height: 16),
-          _EmailLogSection(taskId: task.id),
+          const SizedBox(height: 8),
+          _EmailLogSection(key: ValueKey("email-$_reloadToken"), taskId: task.id),
         ],
         const SizedBox(height: 40),
       ],
@@ -317,7 +321,7 @@ class _SectionHeader extends StatelessWidget {
 class _EmailLogSection extends StatefulWidget {
   final String taskId;
 
-  const _EmailLogSection({required this.taskId});
+  const _EmailLogSection({super.key, required this.taskId});
 
   @override
   State<_EmailLogSection> createState() => _EmailLogSectionState();
@@ -417,6 +421,118 @@ class _EmailLogSectionState extends State<_EmailLogSection> {
                     ? "Thất bại sau ${log["attempts"]} lần thử · ${_formatTime(log["createdAt"]?.toString())}"
                     : "${ok ? "Đã gửi" : "Đang gửi"} · ${_formatTime((log["sentAt"] ?? log["createdAt"])?.toString())}",
               ),
+            );
+          }),
+      ],
+    );
+  }
+}
+
+// Lich su hoat dong cua cong viec: ai lam gi, luc nao. Chi tai khi nguoi dung mo muc nay.
+class _ActivitySection extends StatefulWidget {
+  final String taskId;
+
+  const _ActivitySection({super.key, required this.taskId});
+
+  @override
+  State<_ActivitySection> createState() => _ActivitySectionState();
+}
+
+class _ActivitySectionState extends State<_ActivitySection> {
+  List<Map<String, dynamic>>? _items;
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await ApiService.getActivities(widget.taskId);
+      if (!mounted) return;
+      if (result["activities"] != null) {
+        setState(() {
+          _items = (result["activities"] as List).map((e) => e as Map<String, dynamic>).toList();
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = result["message"]?.toString() ?? "Không tải được lịch sử";
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = "Không kết nối được máy chủ";
+        _loading = false;
+      });
+    }
+  }
+
+  String _formatTime(String? iso) {
+    final d = DateTime.tryParse(iso ?? "")?.toLocal();
+    if (d == null) return "";
+    String two(int v) => v.toString().padLeft(2, '0');
+    return "${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}";
+  }
+
+  IconData _iconFor(String? action) {
+    switch (action) {
+      case "created":
+        return Icons.add_circle_outline;
+      case "status_changed":
+        return Icons.sync_alt;
+      case "due_date_changed":
+        return Icons.event_repeat;
+      case "assigned":
+      case "unassigned":
+        return Icons.assignment_ind_outlined;
+      case "shared":
+      case "share_updated":
+      case "share_revoked":
+        return Icons.share_outlined;
+      default:
+        return Icons.edit_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      title: const Text("Lịch sử hoạt động", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+      onExpansionChanged: (open) {
+        if (open && _items == null && !_loading) _load();
+      },
+      children: [
+        if (_loading)
+          const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator())
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              children: [
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+                TextButton(onPressed: _load, child: const Text("Thử lại")),
+              ],
+            ),
+          )
+        else if (_items != null && _items!.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(8),
+            child: Text("Chưa có hoạt động nào", style: TextStyle(color: Colors.grey)),
+          )
+        else
+          ...(_items ?? []).map((a) {
+            final user = a["user"] as Map<String, dynamic>?;
+            return ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(_iconFor(a["action"]?.toString())),
+              title: Text(a["details"]?.toString() ?? ""),
+              subtitle: Text("${user?["fullName"] ?? "Không rõ"} · ${_formatTime(a["createdAt"]?.toString())}"),
             );
           }),
       ],
