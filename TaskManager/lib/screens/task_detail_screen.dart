@@ -247,6 +247,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               ),
             ),
           ),
+        if (task.isOwner) ...[
+          const SizedBox(height: 16),
+          _EmailLogSection(taskId: task.id),
+        ],
         const SizedBox(height: 40),
       ],
     );
@@ -304,6 +308,117 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
         if (action != null) action!,
+      ],
+    );
+  }
+}
+
+// Nhat ky gui email cua cong viec (chi nguoi tao). Chi tai khi nguoi dung mo muc nay.
+class _EmailLogSection extends StatefulWidget {
+  final String taskId;
+
+  const _EmailLogSection({required this.taskId});
+
+  @override
+  State<_EmailLogSection> createState() => _EmailLogSectionState();
+}
+
+class _EmailLogSectionState extends State<_EmailLogSection> {
+  List<Map<String, dynamic>>? _logs;
+  bool _loading = false;
+  String? _error;
+
+  static const Map<String, String> _eventLabels = {
+    "task_assigned": "Giao việc",
+    "task_shared": "Chia sẻ",
+    "task_share_updated": "Đổi quyền",
+    "task_share_revoked": "Thu hồi quyền",
+    "due_date_changed": "Đổi hạn",
+    "task_completed": "Hoàn thành",
+    "task_reminder": "Nhắc việc",
+  };
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await ApiService.getEmailLogs(widget.taskId);
+      if (!mounted) return;
+      if (result["logs"] != null) {
+        setState(() {
+          _logs = (result["logs"] as List).map((e) => e as Map<String, dynamic>).toList();
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = result["message"]?.toString() ?? "Không tải được nhật ký email";
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = "Không kết nối được máy chủ";
+        _loading = false;
+      });
+    }
+  }
+
+  String _formatTime(String? iso) {
+    final d = DateTime.tryParse(iso ?? "")?.toLocal();
+    if (d == null) return "";
+    String two(int v) => v.toString().padLeft(2, '0');
+    return "${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      title: const Text("Nhật ký email", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+      onExpansionChanged: (open) {
+        if (open && _logs == null && !_loading) _load();
+      },
+      children: [
+        if (_loading)
+          const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator())
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              children: [
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+                TextButton(onPressed: _load, child: const Text("Thử lại")),
+              ],
+            ),
+          )
+        else if (_logs != null && _logs!.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(8),
+            child: Text("Chưa có email nào được gửi", style: TextStyle(color: Colors.grey)),
+          )
+        else
+          ...(_logs ?? []).map((log) {
+            final status = log["status"]?.toString();
+            final ok = status == "sent";
+            final failed = status == "failed";
+            return ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                ok ? Icons.check_circle : (failed ? Icons.error_outline : Icons.schedule),
+                color: ok ? Colors.green : (failed ? Colors.red : Colors.grey),
+              ),
+              title: Text("${_eventLabels[log["eventType"]] ?? log["eventType"]} → ${log["recipientEmail"]}"),
+              subtitle: Text(
+                failed
+                    ? "Thất bại sau ${log["attempts"]} lần thử · ${_formatTime(log["createdAt"]?.toString())}"
+                    : "${ok ? "Đã gửi" : "Đang gửi"} · ${_formatTime((log["sentAt"] ?? log["createdAt"])?.toString())}",
+              ),
+            );
+          }),
       ],
     );
   }
