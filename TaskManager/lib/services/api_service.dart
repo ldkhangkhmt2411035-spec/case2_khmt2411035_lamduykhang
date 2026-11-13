@@ -111,6 +111,45 @@ class ApiService {
     };
   }
 
+  // ===================== THONG BAO =====================
+
+  // Lay danh sach thong bao + so thong bao chua doc
+  static Future<Map<String, dynamic>> getNotifications({bool unreadOnly = false}) async {
+    final headers = await _authHeaders();
+    final uri = Uri.parse("$baseUrl/notifications").replace(
+      queryParameters: {if (unreadOnly) "unread": "true"},
+    );
+    final response = await http.get(uri, headers: headers);
+    return jsonDecode(response.body);
+  }
+
+  static Future<int> getUnreadCount() async {
+    final headers = await _authHeaders();
+    final response = await http.get(Uri.parse("$baseUrl/notifications/unread-count"), headers: headers);
+    if (response.statusCode != 200) return 0;
+    final data = jsonDecode(response.body);
+    return (data["unreadCount"] as num?)?.toInt() ?? 0;
+  }
+
+  static Future<bool> markNotificationRead(String id) async {
+    final headers = await _authHeaders();
+    final response = await http.patch(Uri.parse("$baseUrl/notifications/$id/read"), headers: headers);
+    return response.statusCode == 200;
+  }
+
+  static Future<bool> markAllNotificationsRead() async {
+    final headers = await _authHeaders();
+    final response = await http.patch(Uri.parse("$baseUrl/notifications/read-all"), headers: headers);
+    return response.statusCode == 200;
+  }
+
+  // Nhat ky gui email cua 1 cong viec (chi nguoi tao xem duoc)
+  static Future<Map<String, dynamic>> getEmailLogs(String taskId) async {
+    final headers = await _authHeaders();
+    final response = await http.get(Uri.parse("$baseUrl/tasks/$taskId/email-logs"), headers: headers);
+    return jsonDecode(response.body);
+  }
+
   // ===================== CONG VIEC (TASKS) =====================
 
   // Lay danh sach cong viec. scope: all | mine | assigned | shared
