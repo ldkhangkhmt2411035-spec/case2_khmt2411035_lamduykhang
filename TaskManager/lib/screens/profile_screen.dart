@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
+import 'statistics_screen.dart';
 
 // Man hinh Ca nhan: xem/cap nhat ho so, doi mat khau, dang xuat.
 class ProfileScreen extends StatefulWidget {
@@ -247,6 +248,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: ListTile(
+            leading: const Icon(Icons.bar_chart),
+            title: const Text("Thống kê công việc"),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const StatisticsScreen()),
             ),
           ),
         ),

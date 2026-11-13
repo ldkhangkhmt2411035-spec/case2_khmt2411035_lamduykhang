@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'notification_screen.dart';
 import 'profile_screen.dart';
+import 'statistics_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_form_screen.dart';
 
@@ -213,6 +214,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.pop(context); // dong drawer
                 _openNotifications();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.bar_chart),
+              title: const Text("Thống kê"),
+              onTap: () {
+                Navigator.pop(context); // dong drawer
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const StatisticsScreen()));
               },
             ),
             ListTile(
