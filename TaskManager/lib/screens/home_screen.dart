@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
+import 'notification_screen.dart';
 import 'profile_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_form_screen.dart';
@@ -32,17 +34,44 @@ class _HomeScreenState extends State<HomeScreen> {
   String _order = "desc";
   final _searchController = TextEditingController();
 
+  // So thong bao chua doc (hien tren icon chuong), tu lam moi moi 30 giay
+  int _unreadCount = 0;
+  Timer? _notificationTimer;
+
   @override
   void initState() {
     super.initState();
     _loadUser();
     _loadTasks();
+    _loadUnreadCount();
+    _notificationTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadUnreadCount());
   }
 
   @override
   void dispose() {
+    _notificationTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUnreadCount() async {
+    try {
+      final count = await ApiService.getUnreadCount();
+      if (!mounted) return;
+      setState(() => _unreadCount = count);
+    } catch (_) {
+      // Mat mang tam thoi: giu nguyen so cu
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const NotificationScreen()),
+    );
+    if (!mounted) return;
+    _loadUnreadCount();
+    _loadTasks(); // thong bao co the lien quan toi viec vua duoc giao / doi han
   }
 
   Future<void> _loadUser() async {
@@ -122,6 +151,15 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text("Công việc của tôi"),
         actions: [
           IconButton(
+            tooltip: "Thông báo",
+            onPressed: _openNotifications,
+            icon: Badge(
+              isLabelVisible: _unreadCount > 0,
+              label: Text(_unreadCount > 99 ? "99+" : "$_unreadCount"),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+          ),
+          IconButton(
             tooltip: "Đăng xuất",
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -168,6 +206,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text("Thông báo"),
+              trailing: _unreadCount > 0 ? Badge(label: Text("$_unreadCount")) : null,
+              onTap: () {
+                Navigator.pop(context); // dong drawer
+                _openNotifications();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.person_outline),
               title: const Text("Cá nhân"),
