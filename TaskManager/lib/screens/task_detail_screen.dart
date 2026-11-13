@@ -19,6 +19,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _loading = true;
   String? _error;
   bool _changed = false; // bao cho man hinh truoc biet co can refresh khong
+  bool _updatingStatus = false;
   int _reloadToken = 0; // doi moi khi tai lai de cac muc lich su tu lam moi
 
   @override
@@ -45,6 +46,31 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         _error = result["message"]?.toString() ?? "Không tải được công việc";
         _loading = false;
       });
+    }
+  }
+
+  // Doi nhanh trang thai (PATCH /tasks/:id/status) - chi owner/editor
+  Future<void> _changeStatus(TaskStatus status) async {
+    setState(() => _updatingStatus = true);
+    try {
+      final result = await ApiService.updateStatus(_task!.id, statusToString(status));
+      if (!mounted) return;
+      if (result["task"] != null) {
+        _changed = true;
+        await _loadTask();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result["message"]?.toString() ?? "Cập nhật trạng thái thất bại")),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Không kết nối được máy chủ")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updatingStatus = false);
     }
   }
 
@@ -168,6 +194,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             if (task.myRole != null) Chip(label: Text("Vai trò: ${_roleLabel(task.myRole!)}")),
           ],
         ),
+        if (task.canEdit) ...[
+          const SizedBox(height: 14),
+          const Text("Cập nhật trạng thái", style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: TaskStatus.values
+                .map(
+                  (s) => ChoiceChip(
+                    label: Text(statusLabel(s)),
+                    selected: task.status == s,
+                    onSelected: (_updatingStatus || task.status == s) ? null : (_) => _changeStatus(s),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
         const SizedBox(height: 20),
         if (task.description.isNotEmpty) ...[
           const Text("Mô tả", style: TextStyle(fontWeight: FontWeight.w600)),
