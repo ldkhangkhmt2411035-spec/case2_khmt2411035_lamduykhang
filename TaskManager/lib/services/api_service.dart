@@ -150,6 +150,28 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
+  // ===================== THONG KE & LICH SU =====================
+
+  static Future<Map<String, dynamic>> _getJson(String path) async {
+    final headers = await _authHeaders();
+    final response = await http.get(Uri.parse("$baseUrl$path"), headers: headers);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    data["success"] = response.statusCode == 200;
+    return data;
+  }
+
+  // Thong ke theo trang thai / muc uu tien
+  static Future<Map<String, dynamic>> getTaskStats() => _getJson("/statistics/tasks");
+
+  // Thong ke giao viec / chia se
+  static Future<Map<String, dynamic>> getAssignmentStats() => _getJson("/statistics/assignments");
+
+  // Cong viec sap den han / qua han
+  static Future<Map<String, dynamic>> getDeadlineStats() => _getJson("/statistics/deadlines");
+
+  // Lich su hoat dong cua 1 cong viec
+  static Future<Map<String, dynamic>> getActivities(String taskId) => _getJson("/tasks/$taskId/activities");
+
   // ===================== CONG VIEC (TASKS) =====================
 
   // Lay danh sach cong viec. scope: all | mine | assigned | shared
