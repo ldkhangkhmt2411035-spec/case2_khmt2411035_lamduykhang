@@ -34,7 +34,7 @@
 cd api
 npm install
 cp .env.example .env     # rồi điền giá trị thật vào .env
-npm run dev              # hoặc: node src/server.js
+npm run dev              # tự khởi động lại khi sửa code (hoặc: npm start)
 ```
 
 Biến môi trường (`api/.env`, **không commit file này**):
