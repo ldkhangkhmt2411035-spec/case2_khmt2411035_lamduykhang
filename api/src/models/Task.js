@@ -9,14 +9,14 @@ const assigneeSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// Nguoi duoc chia se xem/sua cong viec
-const sharedWithSchema = new mongoose.Schema(
-  {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    role: { type: String, enum: ["viewer", "editor"], default: "viewer" },
-  },
-  { _id: false }
-);
+// Nguoi duoc chia se xem/sua cong viec.
+// _id cua phan tu chinh la "shareId" dung trong API PATCH/DELETE /tasks/:id/shares/:shareId
+const sharedWithSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  role: { type: String, enum: ["viewer", "editor"], default: "viewer" },
+  sharedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  createdAt: { type: Date, default: Date.now },
+});
 
 const taskSchema = new mongoose.Schema(
   {
