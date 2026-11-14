@@ -413,6 +413,23 @@ class _EmailLogSectionState extends State<_EmailLogSection> {
     }
   }
 
+  String? _retryingId;
+
+  Future<void> _retry(String logId) async {
+    setState(() => _retryingId = logId);
+    String message;
+    try {
+      final result = await ApiService.retryEmailLog(logId);
+      message = result["message"]?.toString() ?? "Không gửi lại được email";
+    } catch (_) {
+      message = "Không kết nối được máy chủ";
+    }
+    if (!mounted) return;
+    setState(() => _retryingId = null);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    _load(); // tai lai nhat ky de thay trang thai moi
+  }
+
   String _formatTime(String? iso) {
     final d = DateTime.tryParse(iso ?? "")?.toLocal();
     if (d == null) return "";
@@ -464,6 +481,14 @@ class _EmailLogSectionState extends State<_EmailLogSection> {
                     ? "Thất bại sau ${log["attempts"]} lần thử · ${_formatTime(log["createdAt"]?.toString())}"
                     : "${ok ? "Đã gửi" : "Đang gửi"} · ${_formatTime((log["sentAt"] ?? log["createdAt"])?.toString())}",
               ),
+              trailing: failed
+                  ? (_retryingId == log["_id"]?.toString()
+                      ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : TextButton(
+                          onPressed: _retryingId != null ? null : () => _retry(log["_id"].toString()),
+                          child: const Text("Gửi lại"),
+                        ))
+                  : null,
             );
           }),
       ],
@@ -521,6 +546,12 @@ class _ActivitySectionState extends State<_ActivitySection> {
     return "${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}";
   }
 
+  // details moi la object { message, ... }; du lieu cu la chuoi
+  String _detailText(dynamic details) {
+    if (details is Map) return details["message"]?.toString() ?? "";
+    return details?.toString() ?? "";
+  }
+
   IconData _iconFor(String? action) {
     switch (action) {
       case "created":
@@ -574,7 +605,7 @@ class _ActivitySectionState extends State<_ActivitySection> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: Icon(_iconFor(a["action"]?.toString())),
-              title: Text(a["details"]?.toString() ?? ""),
+              title: Text(_detailText(a["details"])),
               subtitle: Text("${user?["fullName"] ?? "Không rõ"} · ${_formatTime(a["createdAt"]?.toString())}"),
             );
           }),
