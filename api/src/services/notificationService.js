@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const Notification = require("../models/Notification");
-const { sendEmail, renderEmail, formatDateTime } = require("./emailService");
+const { sendEmail } = require("./emailService");
+const { renderEmail, formatDateTime } = require("../utils/emailTemplates");
 
 const ROLE_LABEL = { viewer: "chỉ xem", editor: "chỉnh sửa" };
 

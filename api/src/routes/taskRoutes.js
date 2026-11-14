@@ -1,39 +1,37 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
-const { getTaskEmailLogs } = require("../controllers/notificationController");
-const { getTaskActivities } = require("../controllers/activityController");
+const { requireTaskAccess } = require("../middleware/permissionMiddleware");
+const { validate, validateObjectIdParams } = require("../middleware/validateMiddleware");
+const { validateCreateTask, validateStatusBody } = require("../validators/taskValidator");
 const {
   createTask,
   getTasks,
   getTaskById,
   updateTask,
-  updateStatus,
   deleteTask,
-  assignTask,
-  removeAssignee,
-  shareTask,
-  updateShareRole,
-  revokeShare,
+  updateStatus,
 } = require("../controllers/taskController");
+const { getTaskEmailLogs } = require("../controllers/emailLogController");
+const { getTaskActivities } = require("../controllers/activityController");
 
-// Tat ca route cong viec deu yeu cau da dang nhap (co token hop le)
 router.use(authMiddleware);
 
-router.post("/", createTask);
+const checkId = validateObjectIdParams("id");
+
+router.post("/", validate((req) => validateCreateTask(req.body)), createTask);
 router.get("/", getTasks);
-router.get("/:id", getTaskById);
-router.put("/:id", updateTask);
-router.delete("/:id", deleteTask);
-router.patch("/:id/status", updateStatus);
-router.get("/:id/email-logs", getTaskEmailLogs);
-router.get("/:id/activities", getTaskActivities);
-
-router.post("/:id/assign", assignTask);
-router.delete("/:id/assign/:userId", removeAssignee);
-
-router.post("/:id/share", shareTask);
-router.put("/:id/share/:userId", updateShareRole);
-router.delete("/:id/share/:userId", revokeShare);
+router.get("/:id", checkId, requireTaskAccess("view"), getTaskById);
+router.put("/:id", checkId, requireTaskAccess("edit"), updateTask);
+router.delete("/:id", checkId, requireTaskAccess("owner"), deleteTask);
+router.patch(
+  "/:id/status",
+  checkId,
+  validate((req) => validateStatusBody(req.body)),
+  requireTaskAccess("edit"),
+  updateStatus
+);
+router.get("/:id/email-logs", checkId, requireTaskAccess("owner"), getTaskEmailLogs);
+router.get("/:id/activities", checkId, getTaskActivities);
 
 module.exports = router;

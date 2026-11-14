@@ -1,62 +1,49 @@
-const nodemailer = require("nodemailer");
 const EmailLog = require("../models/EmailLog");
-
-const MAX_ATTEMPTS = 3; // so lan thu gui toi da cho 1 email
-const RETRY_DELAY_MS = 1500;
-
-let transporter = null;
-
-function isConfigured() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
-}
-
-function getTransporter() {
-  if (!transporter) {
-    const port = Number(process.env.SMTP_PORT) || 587;
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port,
-      secure: port === 465,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
-  }
-  return transporter;
-}
+const {
+  MAX_ATTEMPTS,
+  RETRY_DELAY_MS,
+  isConfigured,
+  getTransporter,
+  getFrom,
+} = require("../config/email");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Du lieu do nguoi dung nhap (tieu de cong viec, ten...) phai duoc escape truoc khi dua vao HTML
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// Gui email cho 1 EmailLog (toi da maxAttempts lan), cap nhat trang thai sent / failed va so lan thu.
+async function deliver(log, html, maxAttempts) {
+  if (!isConfigured()) {
+    log.status = "failed";
+    log.errorMessage = "SMTP chưa được cấu hình (SMTP_HOST, SMTP_USER, SMTP_PASS)";
+    await log.save();
+    return log;
+  }
 
-function formatDateTime(date) {
-  if (!date) return "";
-  return new Date(date).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-}
-
-// Noi dung email dang HTML don gian
-function renderEmail({ title, message, taskTitle, dueDate }) {
-  const due = dueDate ? `<p>Hạn hoàn thành: <b>${escapeHtml(formatDateTime(dueDate))}</b></p>` : "";
-  return `
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:16px">
-      <h2 style="color:#3949ab">${escapeHtml(title)}</h2>
-      <p>${escapeHtml(message)}</p>
-      <p>Công việc: <b>${escapeHtml(taskTitle)}</b></p>
-      ${due}
-      <hr/>
-      <p style="color:#888;font-size:12px">Email tự động từ ứng dụng Task Manager.</p>
-    </div>`;
+  for (let i = 0; i < maxAttempts; i++) {
+    log.attempts += 1;
+    try {
+      await getTransporter().sendMail({
+        from: getFrom(),
+        to: log.recipientEmail,
+        subject: log.subject,
+        html,
+      });
+      log.status = "sent";
+      log.sentAt = new Date();
+      log.errorMessage = "";
+      break;
+    } catch (err) {
+      log.status = "failed";
+      log.errorMessage = err.message;
+      if (i < maxAttempts - 1) await sleep(RETRY_DELAY_MS);
+    }
+  }
+  await log.save();
+  return log;
 }
 
 // Gui email va ghi EmailLog. KHONG nem loi ra ngoai: loi gui email khong duoc lam hong API chinh.
 async function sendEmail({ taskId = null, recipientId = null, to, eventType, subject, html }) {
-  let log;
+  let log = null;
   try {
     log = await EmailLog.create({
       taskId,
@@ -64,40 +51,19 @@ async function sendEmail({ taskId = null, recipientId = null, to, eventType, sub
       recipientEmail: to,
       eventType,
       subject,
+      body: html,
       status: "pending",
     });
-
-    if (!isConfigured()) {
-      log.status = "failed";
-      log.errorMessage = "SMTP chưa được cấu hình (SMTP_HOST, SMTP_USER, SMTP_PASS)";
-      await log.save();
-      return log;
-    }
-
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      log.attempts = attempt;
-      try {
-        await getTransporter().sendMail({
-          from: process.env.MAIL_FROM || process.env.SMTP_USER,
-          to,
-          subject,
-          html,
-        });
-        log.status = "sent";
-        log.sentAt = new Date();
-        log.errorMessage = "";
-        break;
-      } catch (err) {
-        log.status = "failed";
-        log.errorMessage = err.message;
-        if (attempt < MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS);
-      }
-    }
-    await log.save();
+    return await deliver(log, html, MAX_ATTEMPTS);
   } catch (err) {
     console.error("sendEmail loi:", err.message);
+    return log;
   }
-  return log;
 }
 
-module.exports = { sendEmail, renderEmail, escapeHtml, formatDateTime, isConfigured };
+// Gui lai 1 email that bai (1 lan thu moi lan bam). log phai duoc nap kem truong body.
+async function retryEmail(log) {
+  return deliver(log, log.body, 1);
+}
+
+module.exports = { sendEmail, retryEmail };

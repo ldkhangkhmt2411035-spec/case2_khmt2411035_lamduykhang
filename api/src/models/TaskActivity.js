@@ -20,7 +20,8 @@ const taskActivitySchema = new mongoose.Schema(
       ],
       required: true,
     },
-    details: { type: String, default: "" },
+    // Chi tiet thay doi dang object: { message, ...du lieu kem theo (tu, den, quyen...) }
+    details: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
