@@ -273,20 +273,41 @@ class ApiService {
     return data;
   }
 
-  // Giao viec cho 1 hoac nhieu nguoi bang email; primaryEmail la nguoi phu trach chinh
+  // ===================== TIM NGUOI, GIAO VIEC, CHIA SE =====================
+
+  // Tim nguoi dung theo ten hoac email (toi thieu 2 ky tu)
+  static Future<Map<String, dynamic>> searchUsers(String q) async {
+    final headers = await _authHeaders();
+    final uri = Uri.parse("$baseUrl/users/search").replace(queryParameters: {"q": q});
+    final response = await http.get(uri, headers: headers);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  // Giao viec cho 1 hoac nhieu nguoi (theo id); primaryUserId la nguoi phu trach chinh
   static Future<Map<String, dynamic>> assignTask(
     String id, {
-    required List<String> emails,
-    String? primaryEmail,
+    required List<String> userIds,
+    String? primaryUserId,
   }) async {
     final headers = await _authHeaders();
     final response = await http.post(
-      Uri.parse("$baseUrl/tasks/$id/assign"),
+      Uri.parse("$baseUrl/tasks/$id/assignees"),
       headers: headers,
       body: jsonEncode({
-        "emails": emails,
-        if (primaryEmail != null) "primaryEmail": primaryEmail,
+        "userIds": userIds,
+        if (primaryUserId != null) "primaryUserId": primaryUserId,
       }),
+    );
+    return jsonDecode(response.body);
+  }
+
+  // Dat 1 nguoi da duoc giao lam nguoi phu trach chinh
+  static Future<Map<String, dynamic>> setPrimaryAssignee(String id, String userId) async {
+    final headers = await _authHeaders();
+    final response = await http.patch(
+      Uri.parse("$baseUrl/tasks/$id/assignees/$userId"),
+      headers: headers,
+      body: jsonEncode({"isPrimary": true}),
     );
     return jsonDecode(response.body);
   }
@@ -294,47 +315,58 @@ class ApiService {
   static Future<Map<String, dynamic>> removeAssignee(String id, String userId) async {
     final headers = await _authHeaders();
     final response = await http.delete(
-      Uri.parse("$baseUrl/tasks/$id/assign/$userId"),
+      Uri.parse("$baseUrl/tasks/$id/assignees/$userId"),
       headers: headers,
     );
     return jsonDecode(response.body);
   }
 
-  // Chia se cong viec cho 1 nguoi voi quyen viewer hoac editor
+  // Chia se cong viec cho 1 hoac nhieu nguoi voi cung 1 quyen: "viewer" hoac "editor"
   static Future<Map<String, dynamic>> shareTask(
     String id, {
-    required String email,
-    required String role,
+    required List<String> userIds,
+    required String permission,
   }) async {
     final headers = await _authHeaders();
     final response = await http.post(
-      Uri.parse("$baseUrl/tasks/$id/share"),
+      Uri.parse("$baseUrl/tasks/$id/shares"),
       headers: headers,
-      body: jsonEncode({"email": email, "role": role}),
+      body: jsonEncode({
+        "shares": userIds.map((u) => {"userId": u, "permission": permission}).toList(),
+      }),
     );
     return jsonDecode(response.body);
   }
 
   static Future<Map<String, dynamic>> updateShareRole(
     String id,
-    String userId,
-    String role,
+    String shareId,
+    String permission,
   ) async {
     final headers = await _authHeaders();
-    final response = await http.put(
-      Uri.parse("$baseUrl/tasks/$id/share/$userId"),
+    final response = await http.patch(
+      Uri.parse("$baseUrl/tasks/$id/shares/$shareId"),
       headers: headers,
-      body: jsonEncode({"role": role}),
+      body: jsonEncode({"permission": permission}),
     );
     return jsonDecode(response.body);
   }
 
-  static Future<Map<String, dynamic>> revokeShare(String id, String userId) async {
+  static Future<Map<String, dynamic>> revokeShare(String id, String shareId) async {
     final headers = await _authHeaders();
     final response = await http.delete(
-      Uri.parse("$baseUrl/tasks/$id/share/$userId"),
+      Uri.parse("$baseUrl/tasks/$id/shares/$shareId"),
       headers: headers,
     );
     return jsonDecode(response.body);
+  }
+
+  // Gui lai 1 email da that bai (chi nguoi tao cong viec)
+  static Future<Map<String, dynamic>> retryEmailLog(String logId) async {
+    final headers = await _authHeaders();
+    final response = await http.post(Uri.parse("$baseUrl/email-logs/$logId/retry"), headers: headers);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    data["success"] = response.statusCode == 200;
+    return data;
   }
 }

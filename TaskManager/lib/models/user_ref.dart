@@ -31,15 +31,17 @@ class Assignee {
 }
 
 class SharedEntry {
+  final String shareId; // id cua muc chia se, dung cho PATCH/DELETE /tasks/:id/shares/:shareId
   final UserRef user;
-  final String role; // "viewer" | "editor"
+  final String role; // "viewer" | "editor" (permission)
 
-  SharedEntry({required this.user, required this.role});
+  SharedEntry({this.shareId = "", required this.user, required this.role});
 
   factory SharedEntry.fromJson(Map<String, dynamic> json) {
     return SharedEntry(
+      shareId: json["shareId"]?.toString() ?? json["_id"]?.toString() ?? "",
       user: UserRef.fromJson(json["user"] as Map<String, dynamic>),
-      role: json["role"]?.toString() ?? "viewer",
+      role: json["permission"]?.toString() ?? json["role"]?.toString() ?? "viewer",
     );
   }
 }
