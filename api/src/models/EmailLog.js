@@ -8,6 +8,8 @@ const emailLogSchema = new mongoose.Schema(
     recipientEmail: { type: String, required: true },
     eventType: { type: String, required: true },
     subject: { type: String, required: true },
+    // Noi dung HTML da gui, de co the "gui lai" khi that bai. Khong tra ve mac dinh (select: false).
+    body: { type: String, default: "", select: false },
     status: { type: String, enum: ["pending", "sent", "failed"], default: "pending" },
     attempts: { type: Number, default: 0 },
     errorMessage: { type: String, default: "" },
